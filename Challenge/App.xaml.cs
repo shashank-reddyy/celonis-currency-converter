@@ -1,6 +1,9 @@
+using System.Configuration;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Markup;
+using Challenge.Caching;
+using Challenge.Services;
 using Challenge.ViewModels;
 
 namespace Challenge
@@ -18,9 +21,24 @@ namespace Challenge
                 typeof(FrameworkElement),
                 new FrameworkPropertyMetadata(XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag)));
 
+            CacheSettings cacheSettings;
+            try
+            {
+                cacheSettings = CacheSettings.FromApplicationSettings();
+            }
+            catch (ConfigurationErrorsException ex)
+            {
+                MessageBox.Show($"The application settings are invalid:\n{ex.Message}", "Configuration error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+                return;
+            }
+
             // Composition root: the dependencies are created here and injected into the view model.
             _conversionController = new ConversionController();
-            var viewModel = new MainViewModel(_conversionController);
+            var exchangeRateService = new CachingExchangeRateService(
+                _conversionController, cacheSettings.CreateEvictionStrategy());
+            var viewModel = new MainViewModel(exchangeRateService);
 
             MainWindow = new MainWindow { DataContext = viewModel };
             MainWindow.Show();
