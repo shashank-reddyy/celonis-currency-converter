@@ -4,19 +4,32 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Challenge"
+        xmlns:vm="clr-namespace:Challenge.ViewModels"
         mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel, IsDesignTimeCreatable=False}"
         Name="CurrencyConversionWindow"
         Title="Celonis C# Developer Challenge" Height="450" Width="800">
     <Window.Resources>
-        <Style x:Key="ComboBoxStyle" TargetType="ComboBox">
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <!-- Shows the first validation error of a control as its tooltip -->
+        <Style x:Key="ValidationToolTipStyle" TargetType="Control">
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource ValidationToolTipStyle}">
             <Setter Property="Width" Value="200"/>
             <Setter Property="Margin" Value="5"/>
         </Style>
-        <Style x:Key="TextBoxStyle" TargetType="TextBox">
+        <Style x:Key="TextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource ValidationToolTipStyle}">
             <Setter Property="Width" Value="100"/>
             <Setter Property="Margin" Value="5"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
-        <Style x:Key="DatePickerStyle" TargetType="DatePicker">
+        <Style x:Key="DatePickerStyle" TargetType="DatePicker" BasedOn="{StaticResource ValidationToolTipStyle}">
             <Setter Property="Width" Value="200"/>
             <Setter Property="Margin" Value="5"/>
         </Style>
@@ -28,30 +41,86 @@
             <Setter Property="FontSize" Value="20"/>
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
+        <Style x:Key="RightAlignedCellStyle" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Margin" Value="5,0"/>
+        </Style>
     </Window.Resources>
     <Grid>
         <DockPanel Name="MainPanel">
             <TextBlock Text="Currency Conversion" DockPanel.Dock="Top" Style="{StaticResource HeaderStyle}"/>
             <StackPanel DockPanel.Dock="Top" Name="SourceCurrencyPanel" Orientation="Horizontal" HorizontalAlignment="Left">
-                <TextBox Name="SourceCurrencyTextBox" Style="{StaticResource TextBoxStyle}"/>
-                <ComboBox Name="SourceCurrencyComboBox" Style="{StaticResource ComboBoxStyle}"/>
+                <TextBox Name="SourceCurrencyTextBox" Style="{StaticResource TextBoxStyle}"
+                         Text="{Binding AmountText, UpdateSourceTrigger=PropertyChanged}"/>
+                <ComboBox Name="SourceCurrencyComboBox" Style="{StaticResource ComboBoxStyle}"
+                          ItemsSource="{Binding Currencies}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedSourceCurrency}"/>
             </StackPanel>
             <StackPanel DockPanel.Dock="Top" Name="TargetCurrencyPanel" Orientation="Horizontal" HorizontalAlignment="Left">
-                <TextBlock Name="LatestAmountTextBlock" Style="{StaticResource TextBlockStyle}"/>
-                <ComboBox Name="TargetCurrencyComboBox" Style="{StaticResource ComboBoxStyle}" />
-                <TextBlock Name="LatestDateTextBlock" Style="{StaticResource TextBlockStyle}" />
+                <TextBlock Name="LatestAmountTextBlock" Style="{StaticResource TextBlockStyle}"
+                           Width="100" TextAlignment="Right" FontWeight="Bold"
+                           Text="{Binding LatestConvertedAmount, StringFormat={}{0:#,0.00##}, TargetNullValue=-}"/>
+                <ComboBox Name="TargetCurrencyComboBox" Style="{StaticResource ComboBoxStyle}"
+                          ItemsSource="{Binding Currencies}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedTargetCurrency}"/>
+                <TextBlock Name="LatestDateTextBlock" Style="{StaticResource TextBlockStyle}"
+                           Text="{Binding LatestRateDate, StringFormat='Latest rate from {0:d}', TargetNullValue=''}"/>
             </StackPanel>
             <StackPanel DockPanel.Dock="Top" Name="TimeRangeStackPanel" Orientation="Horizontal" HorizontalAlignment="Left">
                 <TextBlock Text="Between" Style="{StaticResource TextBlockStyle}"/>
-                <DatePicker Name="StartDatePicker" Style="{StaticResource DatePickerStyle}"/>
+                <DatePicker Name="StartDatePicker" Style="{StaticResource DatePickerStyle}"
+                            SelectedDate="{Binding StartDate}"
+                            DisplayDateStart="{Binding MinDate, Mode=OneWay}"
+                            DisplayDateEnd="{Binding MaxDate, Mode=OneWay}"/>
                 <TextBlock Text="and" Style="{StaticResource TextBlockStyle}"/>
-                <DatePicker Name="EndDatePicker" Style="{StaticResource DatePickerStyle}"/>
+                <DatePicker Name="EndDatePicker" Style="{StaticResource DatePickerStyle}"
+                            SelectedDate="{Binding EndDate}"
+                            DisplayDateStart="{Binding MinDate, Mode=OneWay}"
+                            DisplayDateEnd="{Binding MaxDate, Mode=OneWay}"/>
             </StackPanel>
-            <!-- Replace the place holder by your control for historical data -->
-            <Grid Name="PlaceHolderGrid" Margin="5">
-                <Border Background="LightGray">
-                    <TextBlock Text="[ List of historical data goes here ]" Style="{StaticResource HeaderStyle}"/>
-                </Border>
+            <ItemsControl DockPanel.Dock="Top" Name="ValidationSummary" ItemsSource="{Binding AllErrors}" Margin="5,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Foreground="Firebrick"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StatusBar DockPanel.Dock="Bottom" Name="StatusBar">
+                <StatusBarItem Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <ProgressBar IsIndeterminate="True" Width="100" Height="12"/>
+                        <TextBlock Text="Loading exchange rates..." Margin="5,0"/>
+                    </StackPanel>
+                </StatusBarItem>
+                <StatusBarItem Visibility="{Binding HasErrorMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding ErrorMessage}" Foreground="Firebrick" VerticalAlignment="Center"/>
+                        <Button Content="Retry" Command="{Binding RetryCommand}" Margin="10,0" Padding="10,0"/>
+                    </StackPanel>
+                </StatusBarItem>
+            </StatusBar>
+            <Grid Name="HistoricDataGrid" Margin="5">
+                <DataGrid Name="HistoricRatesDataGrid"
+                          ItemsSource="{Binding HistoricConversions}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Date" Binding="{Binding Date, StringFormat=d}" Width="*"/>
+                        <DataGridTextColumn Header="Converted amount" Width="*"
+                                            Binding="{Binding ConvertedAmount, StringFormat={}{0:#,0.00##}}"
+                                            ElementStyle="{StaticResource RightAlignedCellStyle}"/>
+                        <DataGridTextColumn Header="Currency" Binding="{Binding TargetCurrency}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+                <TextBlock Text="No exchange rates were published in the selected time frame."
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray"
+                           Visibility="{Binding HasNoHistoricData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </Grid>
         </DockPanel>
     </Grid>
